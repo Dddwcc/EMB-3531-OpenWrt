@@ -1,3 +1,13 @@
+#
+# Copyright (c) 2019-2020 P3TERX <https://p3terx.com>
+#
+# This is free software, licensed under the MIT License.
+# See /LICENSE for more information.
+#
+# https://github.com/P3TERX/Actions-OpenWrt
+# Description: Build EMB-3531 ImmortalWrt 23.05 with Artifacts Fix
+#
+
 name: Build EMB-3531 ImmortalWrt 23.05
 
 on:
@@ -28,6 +38,7 @@ jobs:
       run: |
         sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc
         sudo -E apt-get -qq update
+        # 安装核心编译依赖：python3-pyelftools (U-Boot 必备), clang/llvm (dae/eBPF 必备)
         sudo -E apt-get -qq install $(curl -fsSL https://is.gd/depends_ubuntu_2204) python3-pyelftools clang llvm libelf-dev
         sudo -E apt-get -qq autoremove --purge
         sudo -E apt-get -qq clean
@@ -72,4 +83,5 @@ jobs:
       uses: actions/upload-artifact@main
       with:
         name: ImmortalWrt_EMB3531_23.05
-        path: openwrt/bin/targets/rockchip/rk3399/*.img.gz
+        # 修正：使用通配符匹配所有生成的镜像文件，防止上传失败
+        path: openwrt/bin/targets/rockchip/rk3399/*img*
