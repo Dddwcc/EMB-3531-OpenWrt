@@ -1,20 +1,18 @@
 #!/bin/bash
 
-# 1. 基础网络配置 (旁路由 IP 1.88)
+# 1. 基础配置：修改默认 IP 为 192.168.1.88
 sed -i 's/192.168.1.1/192.168.1.88/g' package/base-files/files/bin/config_generate
 
-# 2. 【核心修复】创建内核源码覆盖目录并注入 DTS (彻底解决 Error 1)
-# 这一步直接生成 EMB-3531 的硬件描述文件，跳过补丁引擎
+# 2. 【狸猫换太子】注入 EMB-3531 设备树到 EVB 模板
 DTS_DIR="target/linux/rockchip/files/arch/arm64/boot/dts/rockchip"
 mkdir -p $DTS_DIR
-
-cat <<EOF > $DTS_DIR/rk3399-emb3531.dts
+cat <<EOF > $DTS_DIR/rk3399-evb.dts
 /dts-v1/;
 #include "rk3399.dtsi"
 #include "rk3399-opp.dtsi"
 
 / {
-	model = "Norco EMB-3531";
+	model = "Norco EMB-3531 (Custom)";
 	compatible = "norco,emb3531", "rockchip,rk3399";
 
 	vcc3v3_pcie: vcc3v3-pcie-regulator {
@@ -54,19 +52,16 @@ cat <<EOF > $DTS_DIR/rk3399-emb3531.dts
 };
 EOF
 
-# 3. 强制在内核 Makefile 中注册该板子
-find target/linux/rockchip/ -name "Makefile" | xargs sed -i '/rk3399-ficus.dtb/a \	rk3399-emb3531.dtb \\' 2>/dev/null || true
-
-# 4. 手动克隆 dae 插件
+# 3. 手动克隆 dae 插件
 rm -rf package/dae package/luci-app-dae
 git clone https://github.com/dae-universe/dae package/dae
 git clone https://github.com/dae-universe/luci-app-dae package/luci-app-dae
 
-# 5. 【盲编配置注入】强制指定型号、2.5G 驱动及 eBPF 参数
-cat <<EOF > .config
+# 4. 【核心增强】强制开启镜像生成选项
+cat <<EOF >> .config
 CONFIG_TARGET_rockchip=y
 CONFIG_TARGET_rockchip_rk3399=y
-CONFIG_TARGET_rockchip_rk3399_DEVICE_rockchip_rk3399-emb3531=y
+CONFIG_TARGET_rockchip_rk3399_DEVICE_rockchip_rk3399-evb=y
 CONFIG_PACKAGE_kmod-r8125=y
 CONFIG_PACKAGE_luci-app-dae=y
 CONFIG_PACKAGE_luci-app-smartdns=y
@@ -77,10 +72,13 @@ CONFIG_BPF_SYSCALL=y
 CONFIG_BPF_JIT=y
 CONFIG_IKCONFIG=y
 CONFIG_IKCONFIG_PROC=y
+# 强制开启镜像生成和压缩
+CONFIG_TARGET_ROOTFS_EXT4FS=y
+CONFIG_TARGET_IMAGES_GZIP=y
 EOF
 
-# 6. 旁路由逻辑预设：设置网关 1.1，DNS 223.5.5.5
+# 5. 旁路由逻辑预设
 sed -i "/set network.lan.ipaddr/a \                set network.lan.gateway='192.168.1.1'\n                set network.lan.dns='223.5.5.5'" package/base-files/files/bin/config_generate
 
-# 7. 应用配置
+# 6. 应用配置
 make defconfig
