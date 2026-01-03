@@ -1,14 +1,4 @@
-#
-# Copyright (c) 2019-2020 P3TERX <https://p3terx.com>
-#
-# This is free software, licensed under the MIT License.
-# See /LICENSE for more information.
-#
-# https://github.com/P3TERX/Actions-OpenWrt
-# Description: Build EMB-3531 ImmortalWrt with Full Auto Fixes
-#
-
-name: Build EMB-3531 ImmortalWrt
+name: Build EMB-3531 ImmortalWrt 23.05
 
 on:
   workflow_dispatch:
@@ -20,7 +10,7 @@ on:
 
 env:
   REPO_URL: https://github.com/immortalwrt/immortalwrt
-  REPO_BRANCH: master
+  REPO_BRANCH: openwrt-23.05
   FEEDS_CONF: feeds.conf.default
   DIY_P1_SH: diy-part1.sh
   DIY_P2_SH: diy-part2.sh
@@ -38,8 +28,6 @@ jobs:
       run: |
         sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc
         sudo -E apt-get -qq update
-        # 核心修复：安装 python3-pyelftools (修复U-Boot报错) 
-        # 同时安装 clang llvm (确保 dae 插件 eBPF 编译成功)
         sudo -E apt-get -qq install $(curl -fsSL https://is.gd/depends_ubuntu_2204) python3-pyelftools clang llvm libelf-dev
         sudo -E apt-get -qq autoremove --purge
         sudo -E apt-get -qq clean
@@ -78,11 +66,10 @@ jobs:
       run: |
         cd openwrt
         echo -e "$(nproc) thread compile"
-        # 默认多线程编译，如果报错则自动切换单线程 V=s 排查
         make -j$(nproc) || make -j1 V=s
 
     - name: Upload firmware
       uses: actions/upload-artifact@main
       with:
-        name: ImmortalWrt_EMB3531
+        name: ImmortalWrt_EMB3531_23.05
         path: openwrt/bin/targets/rockchip/rk3399/*.img.gz
