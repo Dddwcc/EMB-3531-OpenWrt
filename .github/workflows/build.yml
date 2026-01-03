@@ -1,12 +1,7 @@
-name: Build EMB-3531 ImmortalWrt 23.05
+name: Build EMB-3531 ImmortalWrt Final
 
 on:
   workflow_dispatch:
-    inputs:
-      ssh:
-        description: 'SSH connection to Actions'
-        required: false
-        default: 'false'
 
 env:
   REPO_URL: https://github.com/immortalwrt/immortalwrt
@@ -19,7 +14,6 @@ env:
 jobs:
   build:
     runs-on: ubuntu-22.04
-
     steps:
     - name: Checkout
       uses: actions/checkout@main
@@ -36,14 +30,11 @@ jobs:
     - name: Clone source code
       run: git clone $REPO_URL -b $REPO_BRANCH openwrt
 
-    - name: Load custom feeds
-      run: |
-        chmod +x $DIY_P1_SH
-        cd openwrt
-        $GITHUB_WORKSPACE/$DIY_P1_SH
-
     - name: Update & Install feeds
-      run: cd openwrt && ./scripts/feeds update -a && ./scripts/feeds install -a
+      run: |
+        cd openwrt
+        ./scripts/feeds update -a
+        ./scripts/feeds install -a
 
     - name: Load custom configuration
       run: |
@@ -51,32 +42,20 @@ jobs:
         cd openwrt
         $GITHUB_WORKSPACE/$DIY_P2_SH
 
-    - name: SSH connection to Actions
-      uses: P3TERX/ssh2actions@main
-      if: github.event.inputs.ssh == 'true'
-
     - name: Download package
       run: |
         cd openwrt
         make download -j8
-        find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;
 
     - name: Compile the firmware
       run: |
         cd openwrt
-        echo -e "$(nproc) thread compile"
         make -j$(nproc) || make -j1 V=s
-
-    - name: List files for diagnosis
-      run: |
-        cd openwrt/bin/targets/
-        echo "Listing all generated files to confirm path:"
-        find . -name "*img*"
 
     - name: Upload firmware
       uses: actions/upload-artifact@main
       with:
-        name: ImmortalWrt_EMB3531_23.05
-        # 终极修复：从 bin 目录开始向下递归搜索所有包含 img 的文件
-        path: openwrt/bin/targets/**/*img*
+        name: EMB3531_Final_Firmware
+        # 递归搜索所有生成的文件，100% 抓取 combined 镜像
+        path: openwrt/bin/targets/rockchip/**/*img*
