@@ -3,22 +3,15 @@
 # 1. 修改默认 IP 为 192.168.1.88
 sed -i 's/192.168.1.1/192.168.1.88/g' package/base-files/files/bin/config_generate
 
-# 2. 注入 EMB-3531 硬件补丁
-# 创建补丁目录（锁定内核 5.15 版本，这是 RK3399 目前最稳的版本）
+# 2. 注入 EMB-3531 硬件支持补丁 (317补丁)
 mkdir -p target/linux/rockchip/patches-5.15/
-cp ../317-rk3399-emb3531.patch target/linux/rockchip/patches-5.15/
+[ -f ../317-rk3399-emb3531.patch ] && cp ../317-rk3399-emb3531.patch target/linux/rockchip/patches-5.15/
 
-# 3. 注册板级 Makefile (补丁 212 逻辑)
-cat <<EOF > target/linux/rockchip/patches-5.15/212-rk3399-emb3531-support.patch
---- a/arch/arm64/boot/dts/rockchip/Makefile
-+++ b/arch/arm64/boot/dts/rockchip/Makefile
-@@ -48,6 +48,7 @@ dtb-\$(CONFIG_ARCH_ROCKCHIP) += rk3399-evb.dtb
- dtb-\$(CONFIG_ARCH_ROCKCHIP) += rk3399-ficus.dtb
- dtb-\$(CONFIG_ARCH_ROCKCHIP) += rk3399-firefly.dtb
- dtb-\$(CONFIG_ARCH_ROCKCHIP) += rk3399-gru-bob.dtb
-+dtb-\$(CONFIG_ARCH_ROCKCHIP) += rk3399-emb3531.dtb
- dtb-\$(CONFIG_ARCH_ROCKCHIP) += rk3399-gru-kevin.dtb
- EOF
+# 3. 手动下载 dae 及其 LuCI 插件 (跳过软件源系统，防止报错)
+# 下载 dae 核心包
+git clone https://github.com/dae-universe/dae package/dae
+# 下载 dae LuCI 界面
+git clone https://github.com/dae-universe/luci-app-dae package/luci-app-dae
 
 # 4. 强制开启 dae 运行所需的 eBPF 内核参数
 {
@@ -34,8 +27,7 @@ cat <<EOF > target/linux/rockchip/patches-5.15/212-rk3399-emb3531-support.patch
     echo "CONFIG_PACKAGE_kmod-r8125=y"
     echo "CONFIG_PACKAGE_luci-app-dae=y"
     echo "CONFIG_PACKAGE_luci-app-smartdns=y"
-    echo "CONFIG_PACKAGE_luci-app-ttyd=y"
 } >> .config
 
-# 6. 删除可能冲突的 nat64 源码
+# 6. 删除之前导致编译崩溃的 nat64 (如存在)
 rm -rf package/feeds/luci/luci-app-nat64
