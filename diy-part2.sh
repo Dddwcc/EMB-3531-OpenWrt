@@ -1,33 +1,42 @@
 #!/bin/bash
 
-# 1. 修改默认 IP 为 192.168.1.88
+# 1. 基础配置：修改默认 IP 为 192.168.1.88
 sed -i 's/192.168.1.1/192.168.1.88/g' package/base-files/files/bin/config_generate
 
 # 2. 注入 EMB-3531 硬件支持补丁 (317补丁)
+# 我们将补丁放入通用目录，确保 5.10 或 5.15 内核都能尝试应用
 mkdir -p target/linux/rockchip/patches-5.15/
 [ -f ../317-rk3399-emb3531.patch ] && cp ../317-rk3399-emb3531.patch target/linux/rockchip/patches-5.15/
 
-# 3. 手动下载 dae 及其 LuCI 插件 (跳过软件源系统，防止报错)
-# 下载 dae 核心包
+# 3. 注册板级支持 (补丁 212 逻辑)
+# 这一步是为了让 "Norco EMB-3531" 出现在 make menuconfig 的型号选择列表里
+cat <<EOF > target/linux/rockchip/patches-5.15/212-rk3399-emb3531-support.patch
+--- a/arch/arm64/boot/dts/rockchip/Makefile
++++ b/arch/arm64/boot/dts/rockchip/Makefile
+@@ -48,6 +48,7 @@ dtb-\$(CONFIG_ARCH_ROCKCHIP) += rk3399-evb.dtb
+ dtb-\$(CONFIG_ARCH_ROCKCHIP) += rk3399-ficus.dtb
+ dtb-\$(CONFIG_ARCH_ROCKCHIP) += rk3399-firefly.dtb
+ dtb-\$(CONFIG_ARCH_ROCKCHIP) += rk3399-gru-bob.dtb
++dtb-\$(CONFIG_ARCH_ROCKCHIP) += rk3399-emb3531.dtb
+ dtb-\$(CONFIG_ARCH_ROCKCHIP) += rk3399-gru-kevin.dtb
+ EOF
+
+# 4. 手动下载 dae 及其 LuCI 界面 (避开 Feed 报错)
+rm -rf package/dae package/luci-app-dae
 git clone https://github.com/dae-universe/dae package/dae
-# 下载 dae LuCI 界面
 git clone https://github.com/dae-universe/luci-app-dae package/luci-app-dae
 
-# 4. 强制开启 dae 运行所需的 eBPF 内核参数
+# 5. 预设旁路由优化参数
 {
     echo "CONFIG_BPF=y"
     echo "CONFIG_BPF_SYSCALL=y"
     echo "CONFIG_BPF_JIT=y"
     echo "CONFIG_IKCONFIG=y"
     echo "CONFIG_IKCONFIG_PROC=y"
-} >> .config
-
-# 5. 强制添加 2.5G 网卡驱动和旁路由必备插件
-{
     echo "CONFIG_PACKAGE_kmod-r8125=y"
     echo "CONFIG_PACKAGE_luci-app-dae=y"
     echo "CONFIG_PACKAGE_luci-app-smartdns=y"
 } >> .config
 
-# 6. 删除之前导致编译崩溃的 nat64 (如存在)
+# 6. 移除导致冲突的软件包
 rm -rf package/feeds/luci/luci-app-nat64
