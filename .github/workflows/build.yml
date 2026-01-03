@@ -1,4 +1,4 @@
-name: Build EMB-3531 OpenWrt
+name: Build EMB-3531 ImmortalWrt
 
 on:
   workflow_dispatch:
@@ -9,7 +9,7 @@ on:
         default: 'true'
 
 env:
-  REPO_URL: https://github.com/coolsnowwolf/lede
+  REPO_URL: https://github.com/immortalwrt/immortalwrt
   REPO_BRANCH: master
   FEEDS_CONF: feeds.conf.default
   DIY_P1_SH: diy-part1.sh
@@ -70,5 +70,5 @@ jobs:
     - name: Upload firmware
       uses: actions/upload-artifact@main
       with:
-        name: OpenWrt_EMB3531
+        name: ImmortalWrt_EMB3531
         path: openwrt/bin/targets/rockchip/rk3399/*.img.gz
