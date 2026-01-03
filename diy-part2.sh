@@ -1,20 +1,18 @@
 #!/bin/bash
 
-# 1. 基础配置：修改默认 IP 为 192.168.1.88
+# 1. 基础配置
 sed -i 's/192.168.1.1/192.168.1.88/g' package/base-files/files/bin/config_generate
 
-# 2. 【核心修复】狸猫换太子：将 Norco EMB-3531 的定义直接覆盖到官方 EVB 模板上
+# 2. 狸猫换太子：覆盖通用 EVB 模板（确保引导程序兼容性）
 DTS_DIR="target/linux/rockchip/files/arch/arm64/boot/dts/rockchip"
 mkdir -p $DTS_DIR
 cat <<EOF > $DTS_DIR/rk3399-evb.dts
 /dts-v1/;
 #include "rk3399.dtsi"
 #include "rk3399-opp.dtsi"
-
 / {
-	model = "Norco EMB-3531 (Custom)";
+	model = "Norco EMB-3531";
 	compatible = "norco,emb3531", "rockchip,rk3399";
-
 	vcc3v3_pcie: vcc3v3-pcie-regulator {
 		compatible = "regulator-fixed";
 		enable-active-high;
@@ -26,7 +24,6 @@ cat <<EOF > $DTS_DIR/rk3399-evb.dts
 		regulator-boot-on;
 	};
 };
-
 &pcie0 {
 	ep-gpios = <&gpio2 RK_PA4 GPIO_ACTIVE_HIGH>;
 	pinctrl-names = "default";
@@ -34,7 +31,6 @@ cat <<EOF > $DTS_DIR/rk3399-evb.dts
 	vpcie3v3-supply = <&vcc3v3_pcie>;
 	status = "okay";
 };
-
 &pinctrl {
 	pcie {
 		pcie_vcc3v3_en: pcie-vcc3v3-en {
@@ -42,7 +38,6 @@ cat <<EOF > $DTS_DIR/rk3399-evb.dts
 		};
 	};
 };
-
 &sdhci {
 	bus-width = <8>;
 	mmc-hs400-1_8v;
@@ -52,12 +47,13 @@ cat <<EOF > $DTS_DIR/rk3399-evb.dts
 };
 EOF
 
-# 3. 手动克隆 dae 插件
+# 3. 下载插件
 rm -rf package/dae package/luci-app-dae
 git clone https://github.com/dae-universe/dae package/dae
 git clone https://github.com/dae-universe/luci-app-dae package/luci-app-dae
 
-# 4. 【核心纠偏】强制指定 Subtarget 为 armv8 并开启所有压缩选项
+# 4. 【核心纠偏】强制开启全量镜像打包 (Combined Image)
+# 这一步决定了生成的固件是 400MB 还是 16MB
 cat <<EOF > .config
 CONFIG_TARGET_rockchip=y
 CONFIG_TARGET_rockchip_armv8=y
@@ -72,14 +68,14 @@ CONFIG_BPF_SYSCALL=y
 CONFIG_BPF_JIT=y
 CONFIG_IKCONFIG=y
 CONFIG_IKCONFIG_PROC=y
-# 强力开启所有镜像打包选项，确保一定生成 .img.gz
+# 强行开启所有打包选项
 CONFIG_TARGET_ROOTFS_EXT4FS=y
 CONFIG_TARGET_IMAGES_GZIP=y
 CONFIG_TARGET_IMAGE_EXT4_COMBINED=y
+CONFIG_TARGET_KERNEL_PARTSIZE=128
+CONFIG_TARGET_ROOTFS_PARTSIZE=768
 EOF
 
-# 5. 旁路由逻辑预设：网关 1.1，DNS 223.5.5.5
+# 5. 预设
 sed -i "/set network.lan.ipaddr/a \                set network.lan.gateway='192.168.1.1'\n                set network.lan.dns='223.5.5.5'" package/base-files/files/bin/config_generate
-
-# 6. 应用配置
 make defconfig
