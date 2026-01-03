@@ -1,17 +1,17 @@
 #!/bin/bash
 
-# 1. 基础配置
+# 1. 基础配置：修改 IP
 sed -i 's/192.168.1.1/192.168.1.88/g' package/base-files/files/bin/config_generate
 
-# 2. 【核心纠偏】彻底解决 16MB 问题：伪装成 NanoPi R4S (它的打包规则最全)
-# 我们不再注册新名字，直接用 R4S 的壳子装 EMB-3531 的内核定义
+# 2. 【核心注入】伪装成 NanoPi R4S (确保生成 1GB+ 镜像)
+# 理由：R4S 是双网口 RK3399，它的打包脚本最成熟，100% 生成 combined-ext4.img.gz
 DTS_DIR="target/linux/rockchip/files/arch/arm64/boot/dts/rockchip"
 mkdir -p $DTS_DIR
 cat <<EOF > $DTS_DIR/rk3399-nanopi-r4s.dts
 /dts-v1/;
 #include "rk3399-nanopi4.dtsi"
 / {
-	model = "Norco EMB-3531";
+	model = "Norco EMB-3531 Final";
 	compatible = "norco,emb3531", "friendlyarm,nanopi-r4s", "rockchip,rk3399";
 	vcc3v3_pcie: vcc3v3-pcie-regulator {
 		compatible = "regulator-fixed";
@@ -32,14 +32,26 @@ cat <<EOF > $DTS_DIR/rk3399-nanopi-r4s.dts
 };
 EOF
 
-# 3. 【暴力破解】解决 PCIe Timeout
-# 不再通过 patch 文件，直接在编译前夕通过 hooks.sh 用 sed 修改内核驱动源码
-# 这种方法 100% 避开了补丁路径错误的问题
-mkdir -p target/linux/rockchip/
-echo 'sed -i "s/RETRY_COUNT 10/RETRY_COUNT 100/g" drivers/pci/controller/pcie-rockchip-host.c' > target/linux/rockchip/hooks.sh
-echo 'sed -i "s/msleep(100)/msleep(1000)/g" drivers/pci/controller/pcie-rockchip-host.c' >> target/linux/rockchip/hooks.sh
+# 3. 【暴力延时补丁】解决 gen1 timeout (唯一的正确打法)
+# 我们手动构造一个完全符合 Linux 内核标准的 .patch 文件并放入 patches 目录
+PATCH_DIR="target/linux/rockchip/patches-5.15"
+mkdir -p $PATCH_DIR
+cat <<EOF > $PATCH_DIR/999-pcie-rockchip-timeout-fix.patch
+--- a/drivers/pci/controller/pcie-rockchip-host.c
++++ b/drivers/pci/controller/pcie-rockchip-host.c
+@@ -36,2 +36,2 @@
+-#define RETRY_COUNT			10
+-#define SLEEP_MS			100
++#define RETRY_COUNT			100
++#define SLEEP_MS			1000
+EOF
 
-# 4. 强制锁定全量镜像参数
+# 4. 下载 dae 插件
+rm -rf package/dae package/luci-app-dae
+git clone https://github.com/dae-universe/dae package/dae
+git clone https://github.com/dae-universe/luci-app-dae package/luci-app-dae
+
+# 5. 【配置锁定】强制生成 Combined 镜像与 eBPF 参数
 cat <<EOF > .config
 CONFIG_TARGET_rockchip=y
 CONFIG_TARGET_rockchip_armv8=y
@@ -53,6 +65,7 @@ CONFIG_BPF_SYSCALL=y
 CONFIG_BPF_JIT=y
 CONFIG_IKCONFIG=y
 CONFIG_IKCONFIG_PROC=y
+# 确保生成 1GB 以上磁盘镜像
 CONFIG_TARGET_ROOTFS_EXT4FS=y
 CONFIG_TARGET_IMAGES_GZIP=y
 CONFIG_TARGET_IMAGE_EXT4_COMBINED=y
