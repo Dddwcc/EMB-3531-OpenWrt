@@ -1,23 +1,19 @@
 #!/bin/bash
 
-# 1. 基础配置：IP 1.88, 网关 1.1
+# 1. 修改默认 IP
 sed -i 's/192.168.1.1/192.168.1.88/g' package/base-files/files/bin/config_generate
 
-# 2. 【核心排坑】动态清理冲突补丁
-# 自动搜索并删除所有包含 "rk3399-nanopi-r4s.dts" 和修改 "Makefile" 的补丁
-# 这能 100% 解决 105、900 等补丁引起的 Patch failed
-find target/linux/rockchip/patches-5.15/ -type f -exec grep -qE "rk3399-nanopi-r4s.dts|arch/arm64/boot/dts/rockchip/Makefile" {} \; -print -delete
-
-# 3. 【核心注入】基于您提供的“能开机”DTB进行基因改造
-# 覆盖 R4S 模板，确保 HDMI 亮屏 + 1.2GB 镜像
+# 2. 【核心纠偏】使用 files 机制强制覆盖 DTS (补丁引擎看不到这一步，100% 不报错)
+# 我们覆盖官方最基础的 rk3399-evb.dts，把 EMB-3531 的灵魂装进去
 DTS_DIR="target/linux/rockchip/files/arch/arm64/boot/dts/rockchip"
 mkdir -p $DTS_DIR
-cat <<EOF > $DTS_DIR/rk3399-nanopi-r4s.dts
+cat <<EOF > $DTS_DIR/rk3399-evb.dts
 /dts-v1/;
-#include "rk3399-nanopi4.dtsi"
+#include "rk3399.dtsi"
+#include "rk3399-opp.dtsi"
 / {
-	model = "Norco EMB-3531 Final Fix";
-	compatible = "norco,emb3531", "friendlyarm,nanopi-r4s", "rockchip,rk3399";
+	model = "Norco EMB-3531";
+	compatible = "norco,emb3531", "rockchip,rk3399-evb", "rockchip,rk3399";
 	vcc3v3_pcie: vcc3v3-pcie-regulator {
 		compatible = "regulator-fixed";
 		enable-active-high;
@@ -44,28 +40,16 @@ cat <<EOF > $DTS_DIR/rk3399-nanopi-r4s.dts
 };
 EOF
 
-# 4. 【驱动延时】注入 1 秒等待补丁，解决网卡识别超时
-mkdir -p target/linux/rockchip/patches-5.15/
-cat <<EOF > target/linux/rockchip/patches-5.15/999-pcie-rockchip-timeout-fix.patch
---- a/drivers/pci/controller/pcie-rockchip-host.c
-+++ b/drivers/pci/controller/pcie-rockchip-host.c
-@@ -36,2 +36,2 @@
--#define RETRY_COUNT			10
--#define SLEEP_MS			100
-+#define RETRY_COUNT			100
-+#define SLEEP_MS			1000
-EOF
-
-# 5. 下载插件 (dae)
+# 3. 手动下载 dae
 rm -rf package/dae package/luci-app-dae
 git clone https://github.com/dae-universe/dae package/dae
 git clone https://github.com/dae-universe/luci-app-dae package/luci-app-dae
 
-# 6. 【配置锁定】强制生成 1.14GB 磁盘镜像 (Combined)
+# 4. 【生存保障】强制生成全量磁盘镜像，并修正子目标为 armv8
 cat <<EOF > .config
 CONFIG_TARGET_rockchip=y
 CONFIG_TARGET_rockchip_armv8=y
-CONFIG_TARGET_rockchip_armv8_DEVICE_friendlyarm_nanopi-r4s=y
+CONFIG_TARGET_rockchip_armv8_DEVICE_rockchip_rk3399-evb=y
 CONFIG_PACKAGE_kmod-r8125=y
 CONFIG_PACKAGE_luci-app-dae=y
 CONFIG_PACKAGE_luci-app-smartdns=y
