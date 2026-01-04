@@ -1,17 +1,17 @@
 #!/bin/bash
 
-# 1. 基础配置
+# 1. 基础配置：IP 1.88, 网关 1.1
 sed -i 's/192.168.1.1/192.168.1.88/g' package/base-files/files/bin/config_generate
 
-# 2. 【核心绝杀】删除所有可能冲突的 R4S 补丁
-# 这一行会自动搜索所有包含 "rk3399-nanopi-r4s.dts" 关键词的补丁文件并删除
-# 这样无论源码里有 100、105 还是 110 补丁，都不会再报 Patch failed
-grep -l "rk3399-nanopi-r4s.dts" target/linux/rockchip/patches-5.15/*.patch | xargs rm -f
+# 2. 【核心排坑】动态清理冲突补丁
+# 自动搜索并删除所有包含 "rk3399-nanopi-r4s.dts" 和修改 "Makefile" 的补丁
+# 这能 100% 解决 105、900 等补丁引起的 Patch failed
+find target/linux/rockchip/patches-5.15/ -type f -exec grep -qE "rk3399-nanopi-r4s.dts|arch/arm64/boot/dts/rockchip/Makefile" {} \; -print -delete
 
 # 3. 【核心注入】基于您提供的“能开机”DTB进行基因改造
+# 覆盖 R4S 模板，确保 HDMI 亮屏 + 1.2GB 镜像
 DTS_DIR="target/linux/rockchip/files/arch/arm64/boot/dts/rockchip"
 mkdir -p $DTS_DIR
-
 cat <<EOF > $DTS_DIR/rk3399-nanopi-r4s.dts
 /dts-v1/;
 #include "rk3399-nanopi4.dtsi"
@@ -49,19 +49,19 @@ mkdir -p target/linux/rockchip/patches-5.15/
 cat <<EOF > target/linux/rockchip/patches-5.15/999-pcie-rockchip-timeout-fix.patch
 --- a/drivers/pci/controller/pcie-rockchip-host.c
 +++ b/drivers/pci/controller/pcie-rockchip-host.c
-@@ -36,8 +36,8 @@
+@@ -36,2 +36,2 @@
 -#define RETRY_COUNT			10
 -#define SLEEP_MS			100
 +#define RETRY_COUNT			100
 +#define SLEEP_MS			1000
 EOF
 
-# 5. 下载插件
+# 5. 下载插件 (dae)
 rm -rf package/dae package/luci-app-dae
 git clone https://github.com/dae-universe/dae package/dae
 git clone https://github.com/dae-universe/luci-app-dae package/luci-app-dae
 
-# 6. 【配置锁定】强制生成 1.14GB 镜像
+# 6. 【配置锁定】强制生成 1.14GB 磁盘镜像 (Combined)
 cat <<EOF > .config
 CONFIG_TARGET_rockchip=y
 CONFIG_TARGET_rockchip_armv8=y
