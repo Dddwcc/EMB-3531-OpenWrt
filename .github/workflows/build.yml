@@ -1,4 +1,9 @@
-name: Build EMB-3531 Final Stable
+#
+# Build EMB-3531 OpenWrt - Final Stable Version
+# Based on ImmortalWrt 23.05
+#
+
+name: Build EMB-3531 ImmortalWrt Final
 
 on:
   workflow_dispatch:
@@ -6,12 +11,15 @@ on:
 env:
   REPO_URL: https://github.com/immortalwrt/immortalwrt
   REPO_BRANCH: openwrt-23.05
+  FEEDS_CONF: feeds.conf.default
+  DIY_P1_SH: diy-part1.sh
   DIY_P2_SH: diy-part2.sh
   TZ: Asia/Shanghai
 
 jobs:
   build:
     runs-on: ubuntu-22.04
+
     steps:
     - name: Checkout
       uses: actions/checkout@main
@@ -20,13 +28,22 @@ jobs:
       run: |
         sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc
         sudo -E apt-get -qq update
+        # 核心依赖补齐：修复 U-Boot 报错与 dae 编译环境
         sudo -E apt-get -qq install $(curl -fsSL https://is.gd/depends_ubuntu_2204) python3-pyelftools clang llvm libelf-dev
         sudo -E apt-get -qq autoremove --purge
         sudo -E apt-get -qq clean
         sudo timedatectl set-timezone "$TZ"
 
     - name: Clone source code
-      run: git clone $REPO_URL -b $REPO_BRANCH openwrt
+      run: |
+        df -hT $PWD
+        git clone $REPO_URL -b $REPO_BRANCH openwrt
+
+    - name: Load custom feeds
+      run: |
+        chmod +x $DIY_P1_SH
+        cd openwrt
+        $GITHUB_WORKSPACE/$DIY_P1_SH
 
     - name: Update & Install feeds
       run: cd openwrt && ./scripts/feeds update -a && ./scripts/feeds install -a
@@ -38,13 +55,35 @@ jobs:
         $GITHUB_WORKSPACE/$DIY_P2_SH
 
     - name: Download package
-      run: cd openwrt && make download -j8 && find dl -size -1024c -exec rm -f {} \;
+      run: |
+        cd openwrt
+        make download -j8
+        find dl -size -1024c -exec rm -f {} \;
 
     - name: Compile the firmware
-      run: cd openwrt && make -j$(nproc) || make -j1 V=s
+      id: compile
+      run: |
+        cd openwrt
+        
+        # 核心修复步骤 1：先解压内核并应用官方补丁
+        echo "Preparing kernel source..."
+        make target/linux/prepare V=s
+        
+        # 核心修复步骤 2：暴力修改已解压的内核源码，增加 PCIe 超时时间至 1000ms
+        # 这种方式 100% 避开了 Patch failed 报错
+        echo "Injecting PCIe timeout fix..."
+        find build_dir/ -name "pcie-rockchip-host.c" | xargs -r sed -i 's/msleep(100)/msleep(1000)/g'
+        find build_dir/ -name "pcie-rockchip-host.c" | xargs -r sed -i 's/RETRY_COUNT 10/RETRY_COUNT 100/g'
+        
+        # 核心修复步骤 3：正式开始全编译
+        echo -e "$(nproc) thread compile"
+        make -j$(nproc) || make -j1 V=s
+        echo "status=success" >> $GITHUB_OUTPUT
 
     - name: Upload firmware
       uses: actions/upload-artifact@main
+      if: steps.compile.outputs.status == 'success'
       with:
         name: EMB3531_Final_1.2GB_Firmware
+        # 使用递归通配符，100% 抓取生成的文件
         path: openwrt/bin/targets/rockchip/**/*img*
