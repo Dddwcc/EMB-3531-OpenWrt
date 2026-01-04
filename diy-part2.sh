@@ -1,9 +1,13 @@
 #!/bin/bash
 
-# 1. 修改默认 IP
+# 1. 基础配置
 sed -i 's/192.168.1.1/192.168.1.88/g' package/base-files/files/bin/config_generate
 
-# 2. 【核心纠偏】使用 files 机制注入 DTS (绕过补丁引擎)
+# 2. 【绝杀补丁冲突】物理删除所有可能导致中断的 R4S 专有补丁
+rm -f target/linux/rockchip/patches-5.15/*nanopi-r4s*
+rm -f target/linux/rockchip/patches-5.15/*LED*
+
+# 3. 【核心注入】基于您 DTB 数据的基因改造
 DTS_DIR="target/linux/rockchip/files/arch/arm64/boot/dts/rockchip"
 mkdir -p $DTS_DIR
 cat <<EOF > $DTS_DIR/rk3399-nanopi-r4s.dts
@@ -31,18 +35,21 @@ cat <<EOF > $DTS_DIR/rk3399-nanopi-r4s.dts
 };
 EOF
 
-# 3. 【核心修复】解决 17MB 问题的行业标准方案
-# 使用 sed 在 rk3399 基础定义后注入 combined 镜像生成指令，而不破坏文件结构
-# 这一步能确保 100% 产出 1.2GB 的磁盘镜像
-MK_FILE="target/linux/rockchip/image/armv8.mk"
-sed -i '/Device\/rk3399/a \  IMAGE/combined-ext4.img.gz := grub-config | combined | append-metadata | gzip' $MK_FILE
+# 4. 【核心保险】重写打包规则，强制 1.14GB 磁盘镜像输出
+# 这里我们直接重新定义 R4S 的镜像规则，确保它一定产生 combined-ext4.img.gz
+echo '
+define Device/friendlyarm_nanopi-r4s
+  DEVICE_VENDOR := FriendlyElec
+  DEVICE_MODEL := NanoPi R4S
+  DEVICE_PACKAGES := kmod-r8125 uboot-rockchip-rk3399
+  \$(Device/rk3399)
+  IMAGE/combined-ext4.img.gz := grub-config | combined | append-metadata | gzip
+endef
+TARGET_DEVICES := friendlyarm_nanopi-r4s
+' > target/linux/rockchip/image/armv8.mk
 
-# 4. 下载插件
-rm -rf package/dae package/luci-app-dae
-git clone https://github.com/dae-universe/dae package/dae
-git clone https://github.com/dae-universe/luci-app-dae package/luci-app-dae
-
-# 5. 【配置锁定】注入依赖和镜像参数
+# 5. 【配置锁定】注入所有的核心依赖包
+# 必须先执行 make defconfig 之前写入
 cat <<EOF > .config
 CONFIG_TARGET_rockchip=y
 CONFIG_TARGET_rockchip_armv8=y
@@ -64,4 +71,10 @@ CONFIG_TARGET_KERNEL_PARTSIZE=128
 CONFIG_TARGET_ROOTFS_PARTSIZE=1024
 EOF
 
+# 6. 下载插件并完成配置
+rm -rf package/dae package/luci-app-dae
+git clone https://github.com/dae-universe/dae package/dae
+git clone https://github.com/dae-universe/luci-app-dae package/luci-app-dae
+
+# 7. 应用配置并补全依赖
 make defconfig
