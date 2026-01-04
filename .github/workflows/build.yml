@@ -6,7 +6,6 @@ on:
 env:
   REPO_URL: https://github.com/immortalwrt/immortalwrt
   REPO_BRANCH: openwrt-23.05
-  FEEDS_CONF: feeds.conf.default
   DIY_P1_SH: diy-part1.sh
   DIY_P2_SH: diy-part2.sh
   TZ: Asia/Shanghai
@@ -35,10 +34,9 @@ jobs:
 
     - name: Load custom feeds
       run: |
-        [ -e $FEEDS_CONF ] && cp $FEEDS_CONF openwrt/feeds.conf.default
         chmod +x $DIY_P1_SH
         cd openwrt
-        $GITHUB_WORKSPACE/$DIY_P1_SH
+        ../$DIY_P1_SH
 
     - name: Update & Install feeds
       run: |
@@ -48,10 +46,9 @@ jobs:
 
     - name: Load custom configuration
       run: |
-        [ -e .config ] && cp .config openwrt/.config
         chmod +x $DIY_P2_SH
         cd openwrt
-        $GITHUB_WORKSPACE/$DIY_P2_SH
+        ../$DIY_P2_SH
 
     - name: Download package
       run: |
@@ -63,17 +60,13 @@ jobs:
       id: compile
       run: |
         cd openwrt
-        # 步骤 1：先解压内核并应用所有补丁 (确保不再有 Patch failed)
-        echo "Applying official patches..."
+        # 1. 准备内核源码并应用所有补丁
         make target/linux/prepare V=s
-        
-        # 步骤 2：对成品源码进行手术刀注入 (解决网卡超时)
+        # 2. 精准修改内核源码 (解决 PCIe 超时)
         echo "Injecting PCIe timeout fix..."
         find build_dir/ -name "pcie-rockchip-host.c" | xargs -r sed -i 's/msleep(100)/msleep(1000)/g'
         find build_dir/ -name "pcie-rockchip-host.c" | xargs -r sed -i 's/RETRY_COUNT 10/RETRY_COUNT 100/g'
-        
-        # 步骤 3：正式编译
-        echo -e "$(nproc) thread compile"
+        # 3. 正式全编译
         make -j$(nproc) || make -j1 V=s
         echo "status=success" >> $GITHUB_OUTPUT
 
