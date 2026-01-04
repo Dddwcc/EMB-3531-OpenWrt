@@ -1,14 +1,82 @@
+name: Build EMB-3531 Final Stable
+
+on:
+  workflow_dispatch:
+
+env:
+  REPO_URL: https://github.com/immortalwrt/immortalwrt
+  REPO_BRANCH: openwrt-23.05
+  FEEDS_CONF: feeds.conf.default
+  DIY_P1_SH: diy-part1.sh
+  DIY_P2_SH: diy-part2.sh
+  TZ: Asia/Shanghai
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Initialization environment
+      run: |
+        sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc
+        sudo -E apt-get -qq update
+        sudo -E apt-get -qq install $(curl -fsSL https://is.gd/depends_ubuntu_2204) python3-pyelftools clang llvm libelf-dev
+        sudo -E apt-get -qq autoremove --purge
+        sudo -E apt-get -qq clean
+        sudo timedatectl set-timezone "$TZ"
+
+    - name: Clone source code
+      run: |
+        df -hT $PWD
+        git clone $REPO_URL -b $REPO_BRANCH openwrt
+
+    - name: Load custom feeds
+      run: |
+        [ -e $FEEDS_CONF ] && cp $FEEDS_CONF openwrt/feeds.conf.default
+        chmod +x $DIY_P1_SH
+        cd openwrt
+        ../$DIY_P1_SH
+
+    - name: Update & Install feeds
+      run: |
+        cd openwrt
+        ./scripts/feeds update -a
+        ./scripts/feeds install -a
+
+    - name: Load custom configuration
+      run: |
+        [ -e .config ] && cp .config openwrt/.config
+        chmod +x $DIY_P2_SH
+        cd openwrt
+        ../$DIY_P2_SH
+
+    - name: Download package
+      run: |
+        cd openwrt
+        make download -j8
+        find dl -size -1024c -exec rm -f {} \;
+
     - name: Compile the firmware
       id: compile
       run: |
         cd openwrt
-        # 1. 先解压并应用官方补丁 (此时不会报错，因为 Makefile 是完整的)
+        # 步骤 1：准备内核源码（应用所有补丁）
         make target/linux/prepare V=s
-        
-        # 2. 暴力注入延时补丁 (解决网卡识别超时)
+        # 步骤 2：手术刀注入 PCIe 延时
+        echo "Injecting PCIe timeout fix..."
         find build_dir/ -name "pcie-rockchip-host.c" | xargs -r sed -i 's/msleep(100)/msleep(1000)/g'
         find build_dir/ -name "pcie-rockchip-host.c" | xargs -r sed -i 's/RETRY_COUNT 10/RETRY_COUNT 100/g'
-        
-        # 3. 开始编译
+        # 步骤 3：正式编译
+        echo -e "$(nproc) thread compile"
         make -j$(nproc) || make -j1 V=s
         echo "status=success" >> $GITHUB_OUTPUT
+
+    - name: Upload firmware
+      uses: actions/upload-artifact@v4
+      if: steps.compile.outputs.status == 'success'
+      with:
+        name: EMB3531_Final_1.2GB_Firmware
+        path: "openwrt/bin/targets/rockchip/**/*img*"
