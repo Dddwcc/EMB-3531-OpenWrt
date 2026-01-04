@@ -1,4 +1,4 @@
-name: Build EMB-3531 ImmortalWrt Final
+name: Build EMB-3531 Final Stable
 
 on:
   workflow_dispatch:
@@ -6,8 +6,6 @@ on:
 env:
   REPO_URL: https://github.com/immortalwrt/immortalwrt
   REPO_BRANCH: openwrt-23.05
-  FEEDS_CONF: feeds.conf.default
-  DIY_P1_SH: diy-part1.sh
   DIY_P2_SH: diy-part2.sh
   TZ: Asia/Shanghai
 
@@ -31,10 +29,7 @@ jobs:
       run: git clone $REPO_URL -b $REPO_BRANCH openwrt
 
     - name: Update & Install feeds
-      run: |
-        cd openwrt
-        ./scripts/feeds update -a
-        ./scripts/feeds install -a
+      run: cd openwrt && ./scripts/feeds update -a && ./scripts/feeds install -a
 
     - name: Load custom configuration
       run: |
@@ -43,19 +38,13 @@ jobs:
         $GITHUB_WORKSPACE/$DIY_P2_SH
 
     - name: Download package
-      run: |
-        cd openwrt
-        make download -j8
-        find dl -size -1024c -exec rm -f {} \;
+      run: cd openwrt && make download -j8 && find dl -size -1024c -exec rm -f {} \;
 
     - name: Compile the firmware
-      run: |
-        cd openwrt
-        make -j$(nproc) || make -j1 V=s
+      run: cd openwrt && make -j$(nproc) || make -j1 V=s
 
     - name: Upload firmware
       uses: actions/upload-artifact@main
       with:
-        name: EMB3531_Final_Firmware
-        # 递归搜索所有生成的文件，100% 抓取 combined 镜像
+        name: EMB3531_Final_1.2GB_Firmware
         path: openwrt/bin/targets/rockchip/**/*img*
