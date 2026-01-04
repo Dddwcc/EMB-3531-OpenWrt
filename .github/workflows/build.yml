@@ -38,7 +38,7 @@ jobs:
         [ -e $FEEDS_CONF ] && cp $FEEDS_CONF openwrt/feeds.conf.default
         chmod +x $DIY_P1_SH
         cd openwrt
-        ../$DIY_P1_SH
+        $GITHUB_WORKSPACE/$DIY_P1_SH
 
     - name: Update & Install feeds
       run: |
@@ -51,7 +51,7 @@ jobs:
         [ -e .config ] && cp .config openwrt/.config
         chmod +x $DIY_P2_SH
         cd openwrt
-        ../$DIY_P2_SH
+        $GITHUB_WORKSPACE/$DIY_P2_SH
 
     - name: Download package
       run: |
@@ -63,12 +63,15 @@ jobs:
       id: compile
       run: |
         cd openwrt
-        # 步骤 1：准备内核源码（应用所有补丁）
+        # 步骤 1：先解压内核并应用所有补丁 (确保不再有 Patch failed)
+        echo "Applying official patches..."
         make target/linux/prepare V=s
-        # 步骤 2：手术刀注入 PCIe 延时
+        
+        # 步骤 2：对成品源码进行手术刀注入 (解决网卡超时)
         echo "Injecting PCIe timeout fix..."
         find build_dir/ -name "pcie-rockchip-host.c" | xargs -r sed -i 's/msleep(100)/msleep(1000)/g'
         find build_dir/ -name "pcie-rockchip-host.c" | xargs -r sed -i 's/RETRY_COUNT 10/RETRY_COUNT 100/g'
+        
         # 步骤 3：正式编译
         echo -e "$(nproc) thread compile"
         make -j$(nproc) || make -j1 V=s
